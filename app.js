@@ -12,6 +12,8 @@ const COLS = {
 };
 // TEMPLATE list (exported to Excel). Only rows where Record Type = Template are used.
 // "Product list" sheet inside the Status file: which template(s) belong to each status product
+// Only work orders whose Status column equals one of these values are listed (a "Show all" tick box overrides it)
+const OPEN_RULE = { col: "Status", values: ["open"] };
 const MAP_SHEET = "Product list", MAPCOLS = { status: "Products in Status File", tpl: "Products from the Template" };
 const TCOLS = { title: "Title", product: "Product", type: "Record Type", seq: "Sequence", step: "Step Label", item: "Checklist Item", form: "Form", folder: "Folder" };
 
@@ -36,11 +38,12 @@ const DEMO_MAP = [
 ];
 const U = (wo, item, st, loc, fnd, ca, jc, jcs, ndt, shop) => ({ WO: wo, Item: item, "Item Status": st, Location: loc, Finding: fnd, "Corrective Action": ca, "JC Reference": jc, "JC Status": jcs, NDT: ndt, "Shop Status": shop });
 const DEMO_STATUS = [
-  { WO:"B24-804", Product:"Fan Stator Module", "Product code":"FSM", "S/N":"FHH00RC5", ...U("B24-804","IWS01","APPROVED","FSM","DISASSEMBLY","DISASSEMBLY OF THE FAN STATOR ASSEMBLY","CT-RC-72-24-00-STD-DIS-001-07 Rev 05","ARCHIVED","NA","DONE") },
-  { WO:"B24-804", Product:"Fan Stator Module", "Product code":"FSM", "S/N":"FHH00RC5", ...U("B24-804","IWS02","APPROVED","FSM","HANDLING","FSM TRANSFERS","RC-72-00-06-STD-STO-001 Rev 04","ARCHIVED","NA","DONE") },
-  { WO:"B24-804", Product:"Fan Stator Module", "Product code":"FSM", "S/N":"FHH00RC5", ...U("B24-804","IWS03","APPROVED","FSM","WORKSCOPE","FSM CLEANING","RC-70-21-24-STD-CLE-024-01 Rev 03","OPEN","NA","PENDING") },
-  { WO:"A24-847", Product:"NACELLE- Thrust Reverser", "Product code":"TR", "S/N":"ACL01003", ...U("A24-847","IWS01","APPROVED","TR","INSPECTION","INITIAL INSPECTION","GF90-115-FSM-GVI-001","ARCHIVED","NA","DONE") }
+  { Status:"OPEN", WO:"B24-804", Product:"Fan Stator Module", "Product code":"FSM", "S/N":"FHH00RC5", ...U("B24-804","IWS01","APPROVED","FSM","DISASSEMBLY","DISASSEMBLY OF THE FAN STATOR ASSEMBLY","CT-RC-72-24-00-STD-DIS-001-07 Rev 05","ARCHIVED","NA","DONE") },
+  { Status:"OPEN", WO:"B24-804", Product:"Fan Stator Module", "Product code":"FSM", "S/N":"FHH00RC5", ...U("B24-804","IWS02","APPROVED","FSM","HANDLING","FSM TRANSFERS","RC-72-00-06-STD-STO-001 Rev 04","ARCHIVED","NA","DONE") },
+  { Status:"OPEN", WO:"B24-804", Product:"Fan Stator Module", "Product code":"FSM", "S/N":"FHH00RC5", ...U("B24-804","IWS03","APPROVED","FSM","WORKSCOPE","FSM CLEANING","RC-70-21-24-STD-CLE-024-01 Rev 03","OPEN","NA","PENDING") },
+  { Status:"OPEN", WO:"A24-847", Product:"NACELLE- Thrust Reverser", "Product code":"TR", "S/N":"ACL01003", ...U("A24-847","IWS01","APPROVED","TR","INSPECTION","INITIAL INSPECTION","GF90-115-FSM-GVI-001","ARCHIVED","NA","DONE") }
 ];
+DEMO_STATUS.push({ Status:"CLOSED", WO:"A20-001", Product:"Fan Stator Module", "S/N":"OLD1", Item:"IWS01" });
 const DEMO_TPL = [
   { Title:"FSM-02", Product:"Fan Stator Module", "Record Type":"Template", Sequence:2, "Step Label":"STEP 1", "Checklist Item":"PO AFI", Form:"", Folder:"A" },
   { Title:"FSM-03", Product:"Fan Stator Module", "Record Type":"Template", Sequence:3, "Step Label":"STEP 1", "Checklist Item":"Technical Specifications AFI/ Worscope GE", Form:"", Folder:"A" },
@@ -64,7 +67,7 @@ const sid = id => String(id).replace(/['"\\]/g, "");
 
 const S = {
   screen: "start", user: "", status: [], tpl: [], wo: "", sn: "", product: "",
-  items: [], unit: [], unitState: "idle", unitErr: "", unitFile: "", map: [], cands: [], choice: "", row: null, tplProduct: "", data: null, saved: "", err: "", modal: null, dirty: false,
+  showAll: false, items: [], unit: [], unitState: "idle", unitErr: "", unitFile: "", map: [], cands: [], choice: "", row: null, tplProduct: "", data: null, saved: "", err: "", modal: null, dirty: false,
   cfg: Object.assign({ clientId:"", tenant:"common", statusUrl:"", tplUrl:"", folderUrl:"", statusSheet:"", tplSheet:"", unitUrl:"", unitSheet:"" },
         JSON.parse(localStorage.getItem("aprs_cfg") || "{}"))
 };
@@ -178,7 +181,17 @@ async function loadAll(demo) {
     note(""); go("wo");
   } catch (e) { note(""); S.err = e.message; render(); }
 }
-const woList = () => [...new Set(S.status.map(r => val(r, COLS.wo)).filter(Boolean))].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+const isOpen = r => OPEN_RULE.values.includes(norm(val(r, OPEN_RULE.col)));
+const hasStatusCol = () => S.status.some(r => val(r, OPEN_RULE.col));
+const woList = () => {
+  const rows = S.showAll || !hasStatusCol() ? S.status : S.status.filter(isOpen);
+  return [...new Set(rows.map(r => val(r, COLS.wo)).filter(Boolean))].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+};
+function refreshWoList() {
+  const l = woList();
+  $("#wos").innerHTML = l.map(w => `<option value="${esc(w)}">`).join("");
+  $("#wocount").textContent = l.length + (S.showAll || !hasStatusCol() ? " work orders" : " open work orders");
+}
 const pnorm = s => norm(s).replace(/\s+/g, " ");
 const pstrip = s => pnorm(s).replace(/^[a-z]+\s*-\s*/, "");            // "FSM- Fan Stator Module" -> "fan stator module"
 const templateRows = () => S.tpl.filter(t => !val(t, TCOLS.type) || norm(val(t, TCOLS.type)) === "template");
@@ -464,6 +477,8 @@ function render() {
     <label class="f" for="wo">Work order</label>
     <input id="wo" list="wos" autocomplete="off" placeholder="Type or pick a work order" value="${esc(S.wo)}" oninput="pickWo(this.value)">
     <datalist id="wos">${woList().map(w => `<option value="${esc(w)}">`).join("")}</datalist>
+    <p class="prog" style="margin:8px 0 0"><span id="wocount">${woList().length} ${S.showAll || !hasStatusCol() ? "work orders" : "open work orders"}</span>
+      ${hasStatusCol() ? `&nbsp; <label><input type="checkbox" ${S.showAll ? "checked" : ""} onchange="S.showAll=this.checked;refreshWoList()"> Show all, including closed</label>` : ""}</p>
     <div class="two"><div class="box"><small>Serial number</small><b id="sn">${esc(S.sn) || "-"}</b></div><div class="box"><small>Product</small><b id="prod">${esc(S.product) || "-"}</b></div></div>
     <div class="box" id="tpl">${tplBox()}</div>
     <div class="cta"><button id="go" class="btn" ${S.wo && S.choice ? "" : "disabled"} onclick="openWo()">Continue</button></div>`;
