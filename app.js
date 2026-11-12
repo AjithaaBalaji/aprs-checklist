@@ -6,15 +6,42 @@
 
 // STATUS file (one row per work-order item). Header names, any capitalisation.
 const COLS = {
-  wo: "WO", sn: "S/N", product: "Product",
+  wo: "WO", sn: "S/N", product: "Product", engine: "Aircraft/Engine",
   // The 9 columns shown on the Unit Status screen (read from the per-WO unit status file). The FIRST one is the item id (IWS01...)
   status: ["Item","Item Status","Location","Finding","Corrective Action","JC Reference","JC Status","NDT","Shop Status"]
 };
 // TEMPLATE list (exported to Excel). Only rows where Record Type = Template are used.
-// "Product list" sheet inside the Status file: which template(s) belong to each status product
 // Only work orders whose Status column equals one of these values are listed (a "Show all" tick box overrides it)
 const OPEN_RULE = { col: "Status", values: ["open"] };
-const MAP_SHEET = "Product list", MAPCOLS = { status: "Products in Status File", tpl: "Products from the Template" };
+
+// WHICH TEMPLATE A WORK ORDER USES: [status product, engine condition, template product name]
+// Engine condition (read from the Aircraft/Engine column): "" = any engine, "leap" = LEAP1-A, "t700" = T700 / TRENT 700,
+// "other-not-leap-t700" = anything except Leap and T700, "other-not-leap" = anything except Leap.
+const TEMPLATE_RULES = [
+  ["NACELLE- Air inlet", "", "Air Intake Cowl"],
+  ["NACELLE- Fan Cowl", "", "Fan Cowl"],
+  ["NACELLE- Thrust Reverser", "leap", "Thrust Reverser (A320neo)"],
+  ["NACELLE- Thrust Reverser", "t700", "Thrust Reverser (T700)"],
+  ["NACELLE- Thrust Reverser", "other-not-leap-t700", "Thrust Reverser (FEC|TR)"],
+  ["NACELLE - Lower Pivoting Door", "", "Door"],
+  ["NACELLE- Upper Pivoting Door", "", "Door"],
+  ["NACELLE- Fan Exhaust Cowl", "", "Thrust Reverser (FEC|TR)"],
+  ["NACELLE- Translating Cowl", "", "Thrust Reverser (FEC|TR)"],
+  ["NACELLE- Exhaust Nozzle", "other-not-leap", "Exhaust Nozzle"],
+  ["NACELLE- Exhaust Nozzle", "leap", "Exhaust Nozzle (A320neo)"],
+  ["NACELLE - FWD Plug", "leap", "Plug Assy"],
+  ["NACELLE - FWD Plug", "other-not-leap", "Exhaust AFT Plug"],
+  ["NACELLE - AFT Plug", "leap", "Plug Assy"],
+  ["NACELLE - AFT Plug", "other-not-leap", "Exhaust AFT Plug"],
+  ["RADOME - Radome", "", "Radome"],
+  ["FSM- Fan Stator Module", "", "Fan Stator Module"],
+  ["FSM- Forward Fan Case", "", "Forward Fan Case"],
+  ["FSM- Acoustic Panels", "", "Forward Fan Case"],
+  ["LRU- Remote release system", "", "Check LRU - Remote Release System"],
+  ["LRU- HOR", "", "Check LRU - Remote Release System"],
+  ["LRU-Hinge Access Panel", "", "Check LRU - Remote Release System"],
+  ["LRU- Closure device", "", "Check LRU - Remote Release System"]
+];
 const TCOLS = { title: "Title", product: "Product", type: "Record Type", seq: "Sequence", step: "Step Label", item: "Checklist Item", form: "Form", folder: "Folder" };
 
 // Questions in the Maintenance Check popup. text:true = free text answer
@@ -31,20 +58,22 @@ const SCOPES = ["User.Read", "Files.ReadWrite.All", "Sites.Read.All"];
 const G = "https://graph.microsoft.com/v1.0";
 
 /* ---------- demo data (Try demo button) ---------- */
-const DEMO_MAP = [
-  { s: "FSM- Fan Stator Module", t: "Fan Stator Module" },
-  { s: "NACELLE- Thrust Reverser", t: "Thrust Reverser (A320neo)" },
-  { s: "NACELLE- Thrust Reverser", t: "Thrust Reverser (FEC|TR)" }
-];
 const U = (wo, item, st, loc, fnd, ca, jc, jcs, ndt, shop) => ({ WO: wo, Item: item, "Item Status": st, Location: loc, Finding: fnd, "Corrective Action": ca, "JC Reference": jc, "JC Status": jcs, NDT: ndt, "Shop Status": shop });
 const DEMO_STATUS = [
-  { Status:"OPEN", WO:"B24-804", Product:"Fan Stator Module", "Product code":"FSM", "S/N":"FHH00RC5", ...U("B24-804","IWS01","APPROVED","FSM","DISASSEMBLY","DISASSEMBLY OF THE FAN STATOR ASSEMBLY","CT-RC-72-24-00-STD-DIS-001-07 Rev 05","ARCHIVED","NA","DONE") },
-  { Status:"OPEN", WO:"B24-804", Product:"Fan Stator Module", "Product code":"FSM", "S/N":"FHH00RC5", ...U("B24-804","IWS02","APPROVED","FSM","HANDLING","FSM TRANSFERS","RC-72-00-06-STD-STO-001 Rev 04","ARCHIVED","NA","DONE") },
-  { Status:"OPEN", WO:"B24-804", Product:"Fan Stator Module", "Product code":"FSM", "S/N":"FHH00RC5", ...U("B24-804","IWS03","APPROVED","FSM","WORKSCOPE","FSM CLEANING","RC-70-21-24-STD-CLE-024-01 Rev 03","OPEN","NA","PENDING") },
-  { Status:"OPEN", WO:"A24-847", Product:"NACELLE- Thrust Reverser", "Product code":"TR", "S/N":"ACL01003", ...U("A24-847","IWS01","APPROVED","TR","INSPECTION","INITIAL INSPECTION","GF90-115-FSM-GVI-001","ARCHIVED","NA","DONE") }
+  { Status:"OPEN", "Aircraft/Engine":"GE90-115", WO:"B24-804", Product:"Fan Stator Module", "Product code":"FSM", "S/N":"FHH00RC5", ...U("B24-804","IWS01","APPROVED","FSM","DISASSEMBLY","DISASSEMBLY OF THE FAN STATOR ASSEMBLY","CT-RC-72-24-00-STD-DIS-001-07 Rev 05","ARCHIVED","NA","DONE") },
+  { Status:"OPEN", "Aircraft/Engine":"GE90-115", WO:"B24-804", Product:"Fan Stator Module", "Product code":"FSM", "S/N":"FHH00RC5", ...U("B24-804","IWS02","APPROVED","FSM","HANDLING","FSM TRANSFERS","RC-72-00-06-STD-STO-001 Rev 04","ARCHIVED","NA","DONE") },
+  { Status:"OPEN", "Aircraft/Engine":"GE90-115", WO:"B24-804", Product:"Fan Stator Module", "Product code":"FSM", "S/N":"FHH00RC5", ...U("B24-804","IWS03","APPROVED","FSM","WORKSCOPE","FSM CLEANING","RC-70-21-24-STD-CLE-024-01 Rev 03","OPEN","NA","PENDING") },
+  { Status:"OPEN", "Aircraft/Engine":"LEAP-1A", WO:"A24-847", Product:"NACELLE- Thrust Reverser", "Product code":"TR", "S/N":"ACL01003", ...U("A24-847","IWS01","APPROVED","TR","INSPECTION","INITIAL INSPECTION","GF90-115-FSM-GVI-001","ARCHIVED","NA","DONE") }
 ];
+DEMO_STATUS.push({ Status:"OPEN", "Aircraft/Engine":"TRENT 700", WO:"A25-990", Product:"NACELLE- Thrust Reverser", "S/N":"TR791", Item:"IWS01" },
+  { Status:"OPEN", "Aircraft/Engine":"GP7200", WO:"A25-931", Product:"NACELLE- Thrust Reverser", "S/N":"TR02024", Item:"IWS01" },
+  { Status:"OPEN", "Aircraft/Engine":"GP7200", WO:"A25-016", Product:"NACELLE- Exhaust Nozzle", "S/N":"NOZ28547", Item:"IWS01" },
+  { Status:"OPEN", "Aircraft/Engine":"LEAP-1A", WO:"A25-017", Product:"NACELLE - FWD Plug", "S/N":"P1", Item:"IWS01" });
 DEMO_STATUS.push({ Status:"CLOSED", WO:"A20-001", Product:"Fan Stator Module", "S/N":"OLD1", Item:"IWS01" });
 const DEMO_TPL = [
+  { Title:"TRT-01", Product:"Thrust Reverser (T700)", "Record Type":"Template", Sequence:1, "Step Label":"STEP 1", "Checklist Item":"PO customer T700", Form:"", Folder:"A" },
+  { Title:"NZ-01", Product:"Exhaust Nozzle", "Record Type":"Template", Sequence:1, "Step Label":"STEP 1", "Checklist Item":"PO nozzle", Form:"", Folder:"A" },
+  { Title:"PLG-01", Product:"Plug Assy", "Record Type":"Template", Sequence:1, "Step Label":"STEP 1", "Checklist Item":"PO plug", Form:"", Folder:"A" },
   { Title:"FSM-02", Product:"Fan Stator Module", "Record Type":"Template", Sequence:2, "Step Label":"STEP 1", "Checklist Item":"PO AFI", Form:"", Folder:"A" },
   { Title:"FSM-03", Product:"Fan Stator Module", "Record Type":"Template", Sequence:3, "Step Label":"STEP 1", "Checklist Item":"Technical Specifications AFI/ Worscope GE", Form:"", Folder:"A" },
   { Title:"FSM-04", Product:"Fan Stator Module", "Record Type":"Template", Sequence:4, "Step Label":"STEP 2", "Checklist Item":"PRELIMINARY INSPECTION JOB CARD /Initial Workpackage", Form:"BQG8010-Form9", Folder:"C" },
@@ -67,7 +96,7 @@ const sid = id => String(id).replace(/['"\\]/g, "");
 
 const S = {
   screen: "start", user: "", status: [], tpl: [], wo: "", sn: "", product: "",
-  showAll: false, items: [], unit: [], unitState: "idle", unitErr: "", unitFile: "", map: [], cands: [], choice: "", row: null, tplProduct: "", data: null, saved: "", err: "", modal: null, dirty: false,
+  showAll: false, engine: "", items: [], unit: [], unitState: "idle", unitErr: "", unitFile: "", cands: [], choice: "", row: null, tplProduct: "", data: null, saved: "", err: "", modal: null, dirty: false,
   cfg: Object.assign({ clientId:"", tenant:"common", statusUrl:"", tplUrl:"", folderUrl:"", statusSheet:"", tplSheet:"", unitUrl:"", unitSheet:"" },
         JSON.parse(localStorage.getItem("aprs_cfg") || "{}"))
 };
@@ -165,7 +194,7 @@ const Store = {
 async function loadAll(demo) {
   S.err = ""; demoMode = !!demo; render(); note("Loading data…");
   try {
-    if (demoMode) { S.status = lower(DEMO_STATUS); S.tpl = lower(DEMO_TPL); S.map = DEMO_MAP; S.user = "Demo user"; }
+    if (demoMode) { S.status = lower(DEMO_STATUS); S.tpl = lower(DEMO_TPL); S.user = "Demo user"; }
     else {
       const c = S.cfg;
       if (!c.statusUrl || !c.tplUrl || !c.unitUrl || !c.folderUrl) throw new Error("Open Settings and fill in all four SharePoint links.");
@@ -173,9 +202,6 @@ async function loadAll(demo) {
       const [a, b] = await Promise.all([readWb(c.statusUrl), readWb(c.tplUrl)]);
       S.status = lower(sheetOf(a, c.statusSheet));
       S.tpl = lower(sheetOf(b, c.tplSheet));
-      const ms = a.SheetNames.find(n => norm(n) === norm(MAP_SHEET));
-      S.map = ms ? lower(XLSX.utils.sheet_to_json(a.Sheets[ms], { defval: "" }))
-        .map(r => ({ s: r[norm(MAPCOLS.status)] || "", t: r[norm(MAPCOLS.tpl)] || "" })).filter(m => m.s && m.t) : [];
       unitIndexP = null; getIndex().catch(() => {});   // list unit status files in the background
     }
     note(""); go("wo");
@@ -195,24 +221,33 @@ function refreshWoList() {
 const pnorm = s => norm(s).replace(/\s+/g, " ");
 const pstrip = s => pnorm(s).replace(/^[a-z]+\s*-\s*/, "");            // "FSM- Fan Stator Module" -> "fan stator module"
 const templateRows = () => S.tpl.filter(t => !val(t, TCOLS.type) || norm(val(t, TCOLS.type)) === "template");
-/* Which template(s) can this work order use? Uses the Product list sheet; falls back to the same product name. */
+/* Which template does this work order use? Status product + Aircraft/Engine -> TEMPLATE_RULES. */
+const engineKind = e => {
+  const x = String(e || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+  return x.includes("LEAP") ? "leap" : (x.includes("T700") || x.includes("TRENT700")) ? "t700" : "other";
+};
+const ENGINE_OK = {
+  "": () => true, leap: k => k === "leap", t700: k => k === "t700",
+  "other-not-leap-t700": k => k === "other", "other-not-leap": k => k !== "leap"
+};
 function templateNames(row) {
-  const sp = val(row, COLS.product);
-  let names = S.map.filter(m => pnorm(m.s) === pnorm(sp) || pstrip(m.s) === pstrip(sp)).map(m => m.t.trim());
-  if (!names.length) names = [...new Set(templateRows().map(t => val(t, TCOLS.product)))].filter(n => pnorm(n) === pnorm(sp) || pnorm(n) === pstrip(sp));
+  const sp = pstrip(val(row, COLS.product)), kind = engineKind(val(row, COLS.engine));
+  let names = TEMPLATE_RULES.filter(([p, e]) => pstrip(p) === sp && ENGINE_OK[e](kind)).map(r => r[2].trim());
+  if (!names.length) names = [...new Set(templateRows().map(t => val(t, TCOLS.product)))].filter(n => pnorm(n) === pnorm(sp));
   return [...new Set(names)];
 }
 function tplBox() {
   const lab = "<small>Checklist template</small>";
   if (!S.row) return lab + "<b>-</b>";
-  if (!S.cands.length) return lab + `<b style="color:var(--bad)">No template found. Add this product to the "Product list" sheet.</b>`;
-  if (S.cands.length === 1) return lab + `<b>${esc(S.cands[0])}</b>`;
-  return lab + `<select id="tplsel" onchange="S.choice=this.value;$('#go').disabled=!S.choice"><option value="">Select template…</option>${S.cands.map(n => `<option ${n === S.choice ? "selected" : ""}>${esc(n)}</option>`).join("")}</select>`;
+  const eng = S.engine ? `<small style="margin-top:4px">Chosen from Aircraft/Engine: ${esc(S.engine)}</small>` : `<small style="margin-top:4px">Aircraft/Engine is empty in the status file</small>`;
+  if (!S.cands.length) return lab + `<b style="color:var(--bad)">No template rule for "${esc(S.product)}"${S.engine ? " with engine " + esc(S.engine) : ""}.</b>`;
+  if (S.cands.length === 1) return lab + `<b>${esc(S.cands[0])}</b>` + eng;
+  return lab + `<select id="tplsel" onchange="S.choice=this.value;$('#go').disabled=!S.choice"><option value="">Select template…</option>${S.cands.map(n => `<option ${n === S.choice ? "selected" : ""}>${esc(n)}</option>`).join("")}</select>` + eng;
 }
 function pickWo(v) {
   const r = S.status.find(r => val(r, COLS.wo) === v.trim());
   S.row = r || null;
-  S.wo = r ? v.trim() : ""; S.sn = r ? val(r, COLS.sn) : ""; S.product = r ? val(r, COLS.product) : "";
+  S.wo = r ? v.trim() : ""; S.sn = r ? val(r, COLS.sn) : ""; S.product = r ? val(r, COLS.product) : ""; S.engine = r ? val(r, COLS.engine) : "";
   S.cands = r ? templateNames(r) : []; S.choice = S.cands.length === 1 ? S.cands[0] : "";
   $("#sn").textContent = S.sn || "-"; $("#prod").textContent = S.product || "-"; $("#tpl").innerHTML = tplBox();
   $("#go").disabled = !(S.wo && S.choice);
