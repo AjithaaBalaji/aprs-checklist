@@ -102,3 +102,4 @@ td.good{background:#a9d58c}td.na{background:#b3b3b3}td.mid{background:#f3dca0}
 @media(max-width:520px){.row{grid-template-columns:1fr}.chip{min-width:70px}}
 @media(prefers-reduced-motion:no-preference){.chip{transition:background .12s}}
 td.todo{background:#c9def2}
+.rep{margin:24px 0 8px}

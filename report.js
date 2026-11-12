@@ -62,7 +62,7 @@ async function buildReport() {
     out.push(...await photoParas(names));
     return out;
   }
-  const h = (text, lvl, o = {}) => new D.Paragraph({ heading: lvl, keepNext: true, children: [T(text)], ...o });
+  const h = (text, lvl, o = {}) => new D.Paragraph({ heading: lvl, children: [T(text)], ...o });
 
   const kids = [];
   kids.push(h((S.tplProduct || S.product) + " checklist report", D.HeadingLevel.HEADING_1));
@@ -78,59 +78,6 @@ async function buildReport() {
     rows: info.map(r => new D.TableRow({ children: r.map((v, i) => cell(v, iw[i], i % 2 === 0 ? { bold: true, fill: v ? R_LIGHT : undefined } : {})) }))
   }));
 
-  /* ---- dashboard summary ---- */
-  const st = { n: S.items.length, ok: 0, nok: 0, notChk: 0, notRet: 0, full: 0, photos: 0 };
-  S.items.forEach((t, i) => {
-    const a = d.rows[rk(i)] || {};
-    if (a.chk === "OK") st.ok++; else if (a.chk === "NOK") st.nok++; else st.notChk++;
-    if (a.ret === "NO") st.notRet++;
-    if (a.del && a.ret && a.chk) st.full++;
-    st.photos += (a.retP || []).length + (a.chkP || []).length;
-  });
-  const ms = { ok: 0, nok: 0, prog: 0, none: 0 }, unitReady = S.unitState === "ready";
-  if (unitReady) S.unit.forEach(r => {
-    const id = val(r, COLS.status[0]), lab = maintState(id)[0], o = d.maint[id] || {};
-    if (lab === "OK") ms.ok++; else if (lab === "NOK") ms.nok++; else if (lab === "In progress") ms.prog++; else ms.none++;
-    MAINT.forEach((q, i) => { st.photos += (o["q" + i + "P"] || []).length; });
-  });
-  const pct = st.n ? Math.round(100 * st.full / st.n) : 0;
-  const attention = st.nok + st.notRet + ms.nok;
-  const banner = attention ? { fill: R_RED, text: `ACTION NEEDED: ${st.nok} line(s) NOK, ${st.notRet} not returned, ${ms.nok} maintenance item(s) NOK` }
-    : (st.full < st.n || (unitReady && ms.ok < S.unit.length)) ? { fill: "B7791F", text: `IN PROGRESS: ${st.n - st.full} checklist line(s) not fully answered` + (unitReady ? `, ${S.unit.length - ms.ok} maintenance item(s) not finished` : "") }
-    : { fill: R_OK, text: "COMPLETE: all checklist lines and maintenance checks are OK" };
-  const white = { style: D.BorderStyle.SINGLE, size: 24, color: "FFFFFF" }, wb = { top: white, bottom: white, left: white, right: white };
-  kids.push(new D.Table({ width: { size: 15398, type: D.WidthType.DXA }, columnWidths: [15398], rows: [new D.TableRow({ children: [new D.TableCell({
-    width: { size: 15398, type: D.WidthType.DXA }, shading: { type: D.ShadingType.CLEAR, color: "auto", fill: banner.fill }, margins: { top: 110, bottom: 110, left: 200, right: 200 },
-    children: [para(T(banner.text, { bold: true, color: "FFFFFF", size: 24 }))] })] })] }));
-  kids.push(para(T(""), { spacing: { after: 40 } }));
-  const good = { fill: "E8F2DA", color: R_OK }, bad = { fill: "FBE9E7", color: R_RED }, neutral = { fill: "F0F0EE", color: "444444" };
-  const tiles = [
-    { v: pct + "%", l: "Checklist complete", ...(pct === 100 ? good : neutral) },
-    { v: `${st.ok} / ${st.n}`, l: "Lines checked OK", ...good },
-    { v: String(st.nok), l: "Lines NOK", ...(st.nok ? bad : good) },
-    { v: String(st.notRet), l: "Not returned", ...(st.notRet ? bad : good) },
-    { v: unitReady ? `${ms.ok} / ${S.unit.length}` : "-", l: "Maintenance checks OK", ...(unitReady && ms.ok === S.unit.length && S.unit.length ? good : neutral) },
-    { v: unitReady ? String(ms.nok) : "-", l: "Maintenance NOK", ...(ms.nok ? bad : good) },
-    { v: String(st.photos), l: "Photos attached", ...neutral }
-  ];
-  const tw = tiles.map((_, i) => i < 6 ? 2200 : 15398 - 2200 * 6);
-  kids.push(new D.Table({ width: { size: 15398, type: D.WidthType.DXA }, columnWidths: tw, rows: [new D.TableRow({ children: tiles.map((t, i) => new D.TableCell({
-    width: { size: tw[i], type: D.WidthType.DXA }, shading: { type: D.ShadingType.CLEAR, color: "auto", fill: t.fill }, borders: wb,
-    margins: { top: 140, bottom: 140, left: 60, right: 60 },
-    children: [para(T(t.v, { bold: true, size: 52, color: t.color }), { alignment: D.AlignmentType.CENTER }), para(T(t.l, { size: 16, color: "555555" }), { alignment: D.AlignmentType.CENTER })] })) })] }));
-  // proportional status bars
-  const bar = (title, segs) => {
-    const tot = segs.reduce((a, x) => a + x.n, 0), use = segs.filter(x => x.n > 0);
-    if (!tot) return [];
-    let left = 15398; const ws = use.map((x, i) => i < use.length - 1 ? (left -= Math.max(500, Math.round(15398 * x.n / tot)), Math.max(500, Math.round(15398 * x.n / tot))) : left);
-    return [para(T(title, { bold: true, size: 18, color: "444444" }), { spacing: { before: 140, after: 40 }, keepNext: true }),
-      new D.Table({ width: { size: 15398, type: D.WidthType.DXA }, columnWidths: ws, rows: [new D.TableRow({ children: use.map((x, i) => new D.TableCell({
-        width: { size: ws[i], type: D.WidthType.DXA }, shading: { type: D.ShadingType.CLEAR, color: "auto", fill: x.fill }, borders: wb, margins: { top: 70, bottom: 70, left: 80, right: 80 },
-        children: [para(T(ws[i] > 1500 ? `${x.label}: ${x.n}` : String(x.n), { bold: true, size: 18, color: "FFFFFF" }), { alignment: D.AlignmentType.CENTER })] })) })] })];
-  };
-  kids.push(...bar("Checklist lines", [{ n: st.ok, label: "Checked OK", fill: R_OK }, { n: st.nok, label: "NOK", fill: R_RED }, { n: st.notChk, label: "Not checked yet", fill: "9A9A98" }]));
-  if (unitReady) kids.push(...bar("Maintenance checks by unit status item", [{ n: ms.ok, label: "OK", fill: R_OK }, { n: ms.nok, label: "NOK", fill: R_RED }, { n: ms.prog, label: "In progress", fill: "B7791F" }, { n: ms.none, label: "Not started", fill: "9A9A98" }]));
-
   /* ---- checklist ---- */
   kids.push(h("Checklist", D.HeadingLevel.HEADING_2, { spacing: { before: 280, after: 100 } }));
   const cw = [1000, 4300, 1700, 900, 1300, 1300, 1300, 3598];
@@ -143,6 +90,7 @@ async function buildReport() {
     return [{ t: step !== prev ? step : "", o: { bold: true } }, val(t, TCOLS.item), val(t, TCOLS.form), val(t, TCOLS.folder), res(a.del), res(a.ret), res(a.chk), com];
   });
   kids.push(table(cw, ["Step", "Checklist item", "Form", "Folder", "Delivered", "Returned", "Checked", "Comments"], rows));
+  kids.push(para(T(`${nChecked} of ${S.items.length} lines checked.  NOK: ${nNok}.  Not returned: ${nNotRet}.  Lines not fully answered: ${nOpen}.`, { italics: true }), { spacing: { before: 100 } }));
 
   /* ---- findings with photos ---- */
   kids.push(h("Findings", D.HeadingLevel.HEADING_2, { spacing: { before: 280, after: 60 } }));

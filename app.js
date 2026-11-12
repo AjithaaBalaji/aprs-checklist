@@ -340,6 +340,8 @@ async function startUnit() {
   } catch (e) { if (wo !== S.wo) return; S.unitState = "error"; S.unitErr = e.message; }
   if (S.screen === "unit") render();
 }
+const reportBox = () => `<div class="rep"><button class="btn" onclick="makeReport()">Generate Word report</button>
+  <p class="prog">Creates a new Word file each time and saves it in the results folder under ${esc(S.wo)} / reports.</p></div>`;
 function retryUnit() { unitIndexP = null; startUnit(); render(); }
 
 /* ---------- editing + autosave ---------- */
@@ -520,9 +522,10 @@ function render() {
   } else if (sc === "check") {
     h = `<div class="band"><span>WO: <b>${esc(S.wo)}</b></span><span>Product: <b>${esc(S.product)}</b></span><span>SN: <b>${esc(S.sn)}</b></span></div>
     <p class="prog" id="prog">${progText()}</p>${S.items.map((_, i) => rowHTML(i)).join("")}
-    ${S.items.some(t => norm(val(t, TCOLS.item)) === "unit status") ? "" : `<button class="unitlink" onclick="go('unit')"><span>Unit status</span><span aria-hidden="true">→</span></button>`}`;
+    ${S.items.some(t => norm(val(t, TCOLS.item)) === "unit status") ? "" : `<button class="unitlink" onclick="go('unit')"><span>Unit status</span><span aria-hidden="true">→</span></button>`}
+    ${reportBox()}`;
   } else if (sc === "unit") {
-    h = unitHTML();
+    h = unitHTML() + reportBox();
   } else if (sc === "settings") {
     const f = (k, l, p = "") => `<label class="f" for="cf_${k}" style="margin-top:14px">${l}</label><input id="cf_${k}" value="${esc(S.cfg[k])}" placeholder="${p}">`;
     h = `<div style="max-width:640px"><p class="sub">One-time setup, saved on this device.</p>
