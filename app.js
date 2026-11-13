@@ -6,7 +6,7 @@
 
 // STATUS file (one row per work-order item). Header names, any capitalisation.
 const COLS = {
-  wo: "WO", sn: "S/N", product: "Product", engine: "Aircraft/Engine",
+  wo: "WO", sn: "S/N", product: "Product", engine: "Aircraft/Engine", customer: "Customer",
   // The 9 columns shown on the Unit Status screen (read from the per-WO unit status file). The FIRST one is the item id (IWS01...)
   status: ["Item","Item Status","Location","Finding","Corrective Action","JC Reference","JC Status","NDT","Shop Status"]
 };
@@ -70,6 +70,7 @@ DEMO_STATUS.push({ Status:"OPEN", "Aircraft/Engine":"TRENT 700", WO:"A25-990", P
   { Status:"OPEN", "Aircraft/Engine":"GP7200", WO:"A25-016", Product:"NACELLE- Exhaust Nozzle", "S/N":"NOZ28547", Item:"IWS01" },
   { Status:"OPEN", "Aircraft/Engine":"LEAP-1A", WO:"A25-017", Product:"NACELLE - FWD Plug", "S/N":"P1", Item:"IWS01" });
 DEMO_STATUS.push({ Status:"CLOSED", WO:"A20-001", Product:"Fan Stator Module", "S/N":"OLD1", Item:"IWS01" });
+DEMO_STATUS.forEach((r, i) => r.Customer = ["UAE", "AFI (UAE)", "SNA (ETD)"][i % 3]);
 const DEMO_TPL = [
   { Title:"TRT-01", Product:"Thrust Reverser (T700)", "Record Type":"Template", Sequence:1, "Step Label":"STEP 1", "Checklist Item":"PO customer T700", Form:"", Folder:"A" },
   { Title:"NZ-01", Product:"Exhaust Nozzle", "Record Type":"Template", Sequence:1, "Step Label":"STEP 1", "Checklist Item":"PO nozzle", Form:"", Folder:"A" },
@@ -96,7 +97,7 @@ const sid = id => String(id).replace(/['"\\]/g, "");
 
 const S = {
   screen: "start", user: "", status: [], tpl: [], wo: "", sn: "", product: "",
-  showAll: false, engine: "", items: [], unit: [], unitState: "idle", unitErr: "", unitFile: "", cands: [], choice: "", row: null, tplProduct: "", data: null, saved: "", err: "", modal: null, dirty: false,
+  showAll: false, from: "", dash: null, engine: "", items: [], unit: [], unitState: "idle", unitErr: "", unitFile: "", cands: [], choice: "", row: null, tplProduct: "", data: null, saved: "", err: "", modal: null, dirty: false,
   cfg: Object.assign({ clientId:"", tenant:"common", statusUrl:"", tplUrl:"", folderUrl:"", statusSheet:"", tplSheet:"", unitUrl:"", unitSheet:"" },
         JSON.parse(localStorage.getItem("aprs_cfg") || "{}"))
 };
@@ -194,7 +195,7 @@ const Store = {
 async function loadAll(demo) {
   S.err = ""; demoMode = !!demo; render(); note("Loading data…");
   try {
-    if (demoMode) { S.status = lower(DEMO_STATUS); S.tpl = lower(DEMO_TPL); S.user = "Demo user"; }
+    if (demoMode) { S.status = lower(DEMO_STATUS); S.tpl = lower(DEMO_TPL); S.user = "Demo user"; seedDemo(); }
     else {
       const c = S.cfg;
       if (!c.statusUrl || !c.tplUrl || !c.unitUrl || !c.folderUrl) throw new Error("Open Settings and fill in all four SharePoint links.");
@@ -244,18 +245,23 @@ function tplBox() {
   if (S.cands.length === 1) return lab + `<b>${esc(S.cands[0])}</b>` + eng;
   return lab + `<select id="tplsel" onchange="S.choice=this.value;$('#go').disabled=!S.choice"><option value="">Select template…</option>${S.cands.map(n => `<option ${n === S.choice ? "selected" : ""}>${esc(n)}</option>`).join("")}</select>` + eng;
 }
-function pickWo(v) {
-  const r = S.status.find(r => val(r, COLS.wo) === v.trim());
+function selectWo(wo) {
+  const r = S.status.find(r => val(r, COLS.wo) === String(wo).trim());
   S.row = r || null;
-  S.wo = r ? v.trim() : ""; S.sn = r ? val(r, COLS.sn) : ""; S.product = r ? val(r, COLS.product) : ""; S.engine = r ? val(r, COLS.engine) : "";
+  S.wo = r ? String(wo).trim() : ""; S.sn = r ? val(r, COLS.sn) : ""; S.product = r ? val(r, COLS.product) : ""; S.engine = r ? val(r, COLS.engine) : "";
   S.cands = r ? templateNames(r) : []; S.choice = S.cands.length === 1 ? S.cands[0] : "";
+}
+function pickWo(v) {
+  selectWo(v);
   $("#sn").textContent = S.sn || "-"; $("#prod").textContent = S.product || "-"; $("#tpl").innerHTML = tplBox();
   $("#go").disabled = !(S.wo && S.choice);
 }
+/* checklist lines of one template, in Sequence order */
+const itemsFor = name => templateRows().filter(t => pnorm(val(t, TCOLS.product)) === pnorm(name))
+  .sort((a, b) => (parseFloat(val(a, TCOLS.seq)) || 0) - (parseFloat(val(b, TCOLS.seq)) || 0));
 const rk = i => val(S.items[i], TCOLS.title) || String(i);
 async function openWo() {
-  const items = templateRows().filter(t => pnorm(val(t, TCOLS.product)) === pnorm(S.choice))
-    .sort((a, b) => (parseFloat(val(a, TCOLS.seq)) || 0) - (parseFloat(val(b, TCOLS.seq)) || 0));
+  const items = itemsFor(S.choice);
   if (!items.length) { S.err = `No checklist lines found for template "${S.choice}". Check the Product name in the template list matches the Product list sheet.`; return render(); }
   S.err = ""; S.items = items; S.tplProduct = S.choice;
   S.unit = []; startUnit();                       // loads in the background while the checklist is open
@@ -263,7 +269,8 @@ async function openWo() {
   try {
     const d = await Store.loadJson(S.wo);
     S.data = d || { wo: S.wo, sn: S.sn, product: S.product, rows: {}, maint: {} };
-    S.data.rows ||= {}; S.data.maint ||= {}; S.data.template = S.choice;
+    S.data.rows ||= {}; S.data.maint ||= {}; S.data.template = S.choice; S.data.sn = S.sn; S.data.product = S.product;
+    syncMaintTotal();
     S.saved = d?.updated ? "Last saved: " + fmt(d.updated) : "Not saved yet";
     note(""); go("check");
   } catch (e) { note(""); S.err = e.message; render(); }
@@ -336,12 +343,13 @@ async function startUnit() {
       file = f.name + (hits.length > 1 ? ` (latest of ${hits.length} matching files)` : "");
     }
     if (wo !== S.wo) return;
-    S.unit = rows; S.unitFile = file; S.unitState = "ready";
+    S.unit = rows; S.unitFile = file; S.unitState = "ready"; syncMaintTotal();
   } catch (e) { if (wo !== S.wo) return; S.unitState = "error"; S.unitErr = e.message; }
   if (S.screen === "unit") render();
 }
-const reportBox = () => `<div class="rep"><button class="btn" onclick="makeReport()">Generate Word report</button>
-  <p class="prog">Creates a new Word file each time and saves it in the results folder under ${esc(S.wo)} / reports.</p></div>`;
+const reportBox = () => `<div class="rep"><div class="repbtns"><button class="btn" onclick="makePdf()">Generate PDF report</button>
+  <button class="btn alt" onclick="makeReport()">Word report</button></div>
+  <p class="prog">Creates a new file each time and saves it in the results folder under ${esc(S.wo)} / reports.</p></div>`;
 function retryUnit() { unitIndexP = null; startUnit(); render(); }
 
 /* ---------- editing + autosave ---------- */
@@ -352,7 +360,7 @@ async function save() {
   clearTimeout(saveTimer);
   if (!S.data || !S.dirty) return;
   S.dirty = false; S.data.updated = new Date().toISOString(); S.data.inspector = S.user;
-  try { await Store.saveJson(S.wo, S.data); setSaved("Last saved: " + fmt(S.data.updated) + (demoMode ? " (demo, not stored)" : "")); }
+  try { await Store.saveJson(S.wo, S.data); if (S.dash) S.dash.byKey[key(S.wo)] = JSON.parse(JSON.stringify(S.data)); setSaved("Last saved: " + fmt(S.data.updated) + (demoMode ? " (demo, not stored)" : "")); }
   catch (e) { S.dirty = true; setSaved("Not saved: " + e.message); }
 }
 function setF(scope, id, f, v) { obj(scope, id)[f] = v; touch(); }
@@ -443,12 +451,18 @@ function stClass(v) {
   if (["open", "pending", "in progress", "wip"].includes(v)) return "mid";
   return "";
 }
-function maintState(id) {
-  const o = S.data.maint[id] || {}, qs = MAINT.map((q, i) => q.text ? null : o["q" + i]).filter((_, i) => !MAINT[i].text);
+function maintStateOf(o) {
+  o = o || {};
+  const qs = MAINT.map((q, i) => q.text ? null : o["q" + i]).filter((_, i) => !MAINT[i].text);
   const n = qs.filter(Boolean).length;
   if (qs.includes("NOK")) return ["NOK", "bad"];
   if (n === qs.length) return ["OK", "good"];
   return n ? ["In progress", "mid"] : ["Check", ""];
+}
+const maintState = id => maintStateOf(S.data.maint[id]);
+/* remember how many unit status items this work order has, so the dashboard can count them without opening the file */
+function syncMaintTotal() {
+  if (S.data && S.unitState === "ready" && S.data.maintTotal !== S.unit.length) { S.data.maintTotal = S.unit.length; if (S.screen === "check" || S.screen === "unit") touch(); else S.dirty = true; }
 }
 function unitHTML() {
   if (S.unitState === "loading") return `<p class="sub">Loading unit status for ${esc(S.wo)}…</p>`;
@@ -483,8 +497,9 @@ function renderModal() {
 /* ---------- navigation + screens ---------- */
 function go(s) { S.screen = s; S.err = ""; render(); scrollTo(0, 0); }
 async function back() {
-  if (S.screen === "check") { await save(); go("wo"); }
+  if (S.screen === "check") { await save(); go(S.from === "dash" ? "dash" : "wo"); }
   else if (S.screen === "unit") go("check");
+  else if (S.screen === "dash") go("wo");
   else if (S.screen === "settings") go(S.status.length ? "wo" : "start");
 }
 function saveCfg() {
@@ -495,11 +510,13 @@ function saveCfg() {
 function render() {
   const sc = S.screen;
   let t = "APRS CHECKLIST", left = "", right = "";
-  if (["check", "unit", "settings"].includes(sc)) left = `<button class="bk" onclick="back()" aria-label="Back">←</button>`;
+  if (["check", "unit", "settings", "dash"].includes(sc)) left = `<button class="bk" onclick="back()" aria-label="Back">←</button>`;
   if (sc === "check") t = (S.tplProduct || S.product).toUpperCase() + " CHECKLIST";
   if (sc === "unit") t = "UNIT STATUS : " + S.wo;
   if (sc === "settings") t = "Settings";
+  if (sc === "dash") t = "DASHBOARD";
   if (S.user && (sc === "start" || sc === "wo")) right = `<div class="hello">Hello,<br>${esc(S.user)}</div>`;
+  if (sc === "wo") right = `<button class="hbtn" onclick="openDash()">Dashboard</button>` + right;
   const hd = $("#hd"); hd.className = "hd"; hd.innerHTML = `${left}<h1>${esc(t)}</h1>${right}`;
 
   const err = S.err ? `<div class="err" role="alert">${esc(S.err)}</div>` : "";
@@ -518,7 +535,7 @@ function render() {
       ${hasStatusCol() ? `&nbsp; <label><input type="checkbox" ${S.showAll ? "checked" : ""} onchange="S.showAll=this.checked;refreshWoList()"> Show all, including closed</label>` : ""}</p>
     <div class="two"><div class="box"><small>Serial number</small><b id="sn">${esc(S.sn) || "-"}</b></div><div class="box"><small>Product</small><b id="prod">${esc(S.product) || "-"}</b></div></div>
     <div class="box" id="tpl">${tplBox()}</div>
-    <div class="cta"><button id="go" class="btn" ${S.wo && S.choice ? "" : "disabled"} onclick="openWo()">Continue</button></div>`;
+    <div class="cta"><button id="go" class="btn" ${S.wo && S.choice ? "" : "disabled"} onclick="S.from='';openWo()">Continue</button></div>`;
   } else if (sc === "check") {
     h = `<div class="band"><span>WO: <b>${esc(S.wo)}</b></span><span>Product: <b>${esc(S.product)}</b></span><span>SN: <b>${esc(S.sn)}</b></span></div>
     <p class="prog" id="prog">${progText()}</p>${S.items.map((_, i) => rowHTML(i)).join("")}
@@ -526,6 +543,8 @@ function render() {
     ${reportBox()}`;
   } else if (sc === "unit") {
     h = unitHTML() + reportBox();
+  } else if (sc === "dash") {
+    h = dashHTML();
   } else if (sc === "settings") {
     const f = (k, l, p = "") => `<label class="f" for="cf_${k}" style="margin-top:14px">${l}</label><input id="cf_${k}" value="${esc(S.cfg[k])}" placeholder="${p}">`;
     h = `<div style="max-width:640px"><p class="sub">One-time setup, saved on this device.</p>
@@ -538,6 +557,7 @@ function render() {
   }
   $("#app").innerHTML = h;
   const sv = $("#saved"); sv.hidden = !(sc === "check" || sc === "unit"); sv.textContent = S.saved;
+  if (sc === "dash") afterDashRender();
   hydrate($("#app"));
 }
 addEventListener("beforeunload", e => { if (S.dirty) { e.preventDefault(); e.returnValue = ""; } });
