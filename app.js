@@ -348,8 +348,8 @@ async function startUnit() {
   if (S.screen === "unit") render();
 }
 const reportBox = () => `<div class="rep"><div class="repbtns"><button class="btn" onclick="makePdf()">Generate PDF report</button>
-  <button class="btn alt" onclick="makeReport()">Word report</button></div>
-  <p class="prog">Creates a new file each time and saves it in the results folder under ${esc(S.wo)} / reports.</p></div>`;
+ </div>
+  <p class="prog">Saves one PDF per work order in the results folder under ${esc(S.wo)} / reports. Pressing again after changes replaces it with the latest.</p></div>`;
 function retryUnit() { unitIndexP = null; startUnit(); render(); }
 
 /* ---------- editing + autosave ---------- */

@@ -1,7 +1,7 @@
 /* =====================================================================
    PDF REPORT  (uses pdf-lib.min.js, runs after report.js and app.js)
-   Same content as the Word report: dashboard summary, checklist, findings with
-   photos, unit status, maintenance checks. Each press creates a NEW file with
+   Dashboard summary, checklist, findings with
+   photos, unit status, maintenance checks. Each press REPLACES the same file (one PDF per work order) with
    date and time and saves it in <results folder>/<work order>/reports.
    ===================================================================== */
 const MIME_PDF = "application/pdf";
@@ -205,15 +205,15 @@ async function buildPdf() {
 
 let reportingPdf = false;
 async function makePdf() {
-  if (reportingPdf || reporting) return;
+  if (reportingPdf) return;
   if (typeof PDFLib === "undefined") { note("The PDF library did not load. Refresh the page (Ctrl+F5) and try again.", 7000); return; }
   reportingPdf = true;
   try {
     note("Preparing PDF…");
     await save(); await waitUnit();
-    const bytes = await buildPdf(), blob = new Blob([bytes], { type: MIME_PDF }), name = `${key(S.wo)} Report ${stampOf(new Date())}.pdf`;
-    if (!demoMode) { note("Saving to SharePoint…"); await putLarge(key(S.wo) + "/reports/" + name, blob, MIME_PDF); }
-    download(blob, name);
+    const bytes = await buildPdf(), blob = new Blob([bytes], { type: MIME_PDF }), name = `${key(S.wo)} Report.pdf`;
+    if (!demoMode) { note("Saving to SharePoint…"); await putLarge(key(S.wo) + "/reports/" + name, blob, MIME_PDF, "replace"); }
+    if (demoMode) download(blob, name);   // real use: saved in SharePoint only
     note(demoMode ? "PDF downloaded (demo mode)." : `Saved in the results folder: ${key(S.wo)} / reports / ${name}`, 9000);
   } catch (e) { note("PDF failed: " + e.message, 9000); }
   reportingPdf = false;
