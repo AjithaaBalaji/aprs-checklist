@@ -37,10 +37,10 @@ const TEMPLATE_RULES = [
   ["FSM- Fan Stator Module", "", "Fan Stator Module"],
   ["FSM- Forward Fan Case", "", "Forward Fan Case"],
   ["FSM- Acoustic Panels", "", "Forward Fan Case"],
-  ["LRU- Remote release system", "", "Check LRU - Remote Release System"],
-  ["LRU- HOR", "", "Check LRU - Remote Release System"],
-  ["LRU-Hinge Access Panel", "", "Check LRU - Remote Release System"],
-  ["LRU- Closure device", "", "Check LRU - Remote Release System"]
+  ["LRU- Remote release system", "", "Remote Release System"],
+  ["LRU- HOR", "", "Remote Release System"],
+  ["LRU-Hinge Access Panel", "", "Remote Release System"],
+  ["LRU- Closure device", "", "Remote Release System"]
 ];
 const TCOLS = { title: "Title", product: "Product", type: "Record Type", seq: "Sequence", step: "Step Label", item: "Checklist Item", form: "Form", folder: "Folder" };
 
