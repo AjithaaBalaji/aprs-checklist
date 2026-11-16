@@ -178,17 +178,3 @@ function openFromDash(wo) {
   if (!S.choice) { S.err = `No template rule for "${S.product}"${S.engine ? " with engine " + S.engine : ""}, so this work order can't be opened.`; return render(); }
   S.from = "dash"; openWo();
 }
-
-/* ---- demo results so the dashboard has something to show ---- */
-function seedDemo() {
-  if (Store.mem.size) return;
-  const now = new Date().toISOString(), A = (d, r, c, extra) => ({ del: d, ret: r, chk: c, ...(extra || {}) });
-  const M = (bad) => Object.fromEntries([0, 1, 2, 3, 5].map(i => ["q" + i, bad === i ? "NOK" : "OK"]));
-  const mk = (wo, sn, product, template, rows, maint, total) => Store.mem.set(wo, { wo, sn, product, template, rows, maint: maint || {}, maintTotal: total ?? null, updated: now, inspector: "Demo user" });
-  mk("B24-804", "FHH00RC5", "Fan Stator Module", "Fan Stator Module",
-    { "FSM-02": A("YES", "YES", "OK"), "FSM-03": A("YES", "NO", "NOK", { retC: "Specification missing" }), "FSM-04": A("YES", "YES", "OK") },
-    { IWS01: { ...M(1), q1C: "Stamp missing" } }, 3);
-  mk("A24-847", "ACL01003", "NACELLE- Thrust Reverser", "Thrust Reverser (A320neo)", { "TRA-01": A("YES", "YES", "OK") }, { IWS01: M(-1) }, 1);
-  mk("A25-931", "TR02024", "NACELLE- Thrust Reverser", "Thrust Reverser (FEC|TR)", { "TR-01": A("YES", "YES", "OK"), "TR-02": A("YES", "", "") });
-  mk("A25-016", "NOZ28547", "NACELLE- Exhaust Nozzle", "Exhaust Nozzle", { "NZ-01": A("N/A", "NO", "NOK") });
-}

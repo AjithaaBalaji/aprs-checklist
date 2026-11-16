@@ -57,35 +57,6 @@ const MAINT = [
 const SCOPES = ["User.Read", "Files.ReadWrite.All", "Sites.Read.All"];
 const G = "https://graph.microsoft.com/v1.0";
 
-/* ---------- demo data (Try demo button) ---------- */
-const U = (wo, item, st, loc, fnd, ca, jc, jcs, ndt, shop) => ({ WO: wo, Item: item, "Item Status": st, Location: loc, Finding: fnd, "Corrective Action": ca, "JC Reference": jc, "JC Status": jcs, NDT: ndt, "Shop Status": shop });
-const DEMO_STATUS = [
-  { Status:"OPEN", "Aircraft/Engine":"GE90-115", WO:"B24-804", Product:"Fan Stator Module", "Product code":"FSM", "S/N":"FHH00RC5", ...U("B24-804","IWS01","APPROVED","FSM","DISASSEMBLY","DISASSEMBLY OF THE FAN STATOR ASSEMBLY","CT-RC-72-24-00-STD-DIS-001-07 Rev 05","ARCHIVED","NA","DONE") },
-  { Status:"OPEN", "Aircraft/Engine":"GE90-115", WO:"B24-804", Product:"Fan Stator Module", "Product code":"FSM", "S/N":"FHH00RC5", ...U("B24-804","IWS02","APPROVED","FSM","HANDLING","FSM TRANSFERS","RC-72-00-06-STD-STO-001 Rev 04","ARCHIVED","NA","DONE") },
-  { Status:"OPEN", "Aircraft/Engine":"GE90-115", WO:"B24-804", Product:"Fan Stator Module", "Product code":"FSM", "S/N":"FHH00RC5", ...U("B24-804","IWS03","APPROVED","FSM","WORKSCOPE","FSM CLEANING","RC-70-21-24-STD-CLE-024-01 Rev 03","OPEN","NA","PENDING") },
-  { Status:"OPEN", "Aircraft/Engine":"LEAP-1A", WO:"A24-847", Product:"NACELLE- Thrust Reverser", "Product code":"TR", "S/N":"ACL01003", ...U("A24-847","IWS01","APPROVED","TR","INSPECTION","INITIAL INSPECTION","GF90-115-FSM-GVI-001","ARCHIVED","NA","DONE") }
-];
-DEMO_STATUS.push({ Status:"OPEN", "Aircraft/Engine":"TRENT 700", WO:"A25-990", Product:"NACELLE- Thrust Reverser", "S/N":"TR791", Item:"IWS01" },
-  { Status:"OPEN", "Aircraft/Engine":"GP7200", WO:"A25-931", Product:"NACELLE- Thrust Reverser", "S/N":"TR02024", Item:"IWS01" },
-  { Status:"OPEN", "Aircraft/Engine":"GP7200", WO:"A25-016", Product:"NACELLE- Exhaust Nozzle", "S/N":"NOZ28547", Item:"IWS01" },
-  { Status:"OPEN", "Aircraft/Engine":"LEAP-1A", WO:"A25-017", Product:"NACELLE - FWD Plug", "S/N":"P1", Item:"IWS01" });
-DEMO_STATUS.push({ Status:"CLOSED", WO:"A20-001", Product:"Fan Stator Module", "S/N":"OLD1", Item:"IWS01" });
-DEMO_STATUS.forEach((r, i) => r.Customer = ["UAE", "AFI (UAE)", "SNA (ETD)"][i % 3]);
-const DEMO_TPL = [
-  { Title:"TRT-01", Product:"Thrust Reverser (T700)", "Record Type":"Template", Sequence:1, "Step Label":"STEP 1", "Checklist Item":"PO customer T700", Form:"", Folder:"A" },
-  { Title:"NZ-01", Product:"Exhaust Nozzle", "Record Type":"Template", Sequence:1, "Step Label":"STEP 1", "Checklist Item":"PO nozzle", Form:"", Folder:"A" },
-  { Title:"PLG-01", Product:"Plug Assy", "Record Type":"Template", Sequence:1, "Step Label":"STEP 1", "Checklist Item":"PO plug", Form:"", Folder:"A" },
-  { Title:"FSM-02", Product:"Fan Stator Module", "Record Type":"Template", Sequence:2, "Step Label":"STEP 1", "Checklist Item":"PO AFI", Form:"", Folder:"A" },
-  { Title:"FSM-03", Product:"Fan Stator Module", "Record Type":"Template", Sequence:3, "Step Label":"STEP 1", "Checklist Item":"Technical Specifications AFI/ Worscope GE", Form:"", Folder:"A" },
-  { Title:"FSM-04", Product:"Fan Stator Module", "Record Type":"Template", Sequence:4, "Step Label":"STEP 2", "Checklist Item":"PRELIMINARY INSPECTION JOB CARD /Initial Workpackage", Form:"BQG8010-Form9", Folder:"C" },
-  { Title:"FSM-05", Product:"Fan Stator Module", "Record Type":"Template", Sequence:5, "Step Label":"STEP 2", "Checklist Item":"Incoming Inspection check list", Form:"BQG8009 Form2", Folder:"C" },
-  { Title:"FSM-07", Product:"Fan Stator Module", "Record Type":"Template", Sequence:7, "Step Label":"STEP 2", "Checklist Item":"Unit Status", Form:"BQG8010-Form3", Folder:"B" },
-  { Title:"FSM-99", Product:"Fan Stator Module", "Record Type":"Result", Sequence:99, "Step Label":"STEP 9", "Checklist Item":"Should not appear", Form:"", Folder:"" },
-  { Title:"TR-01", Product:"Thrust Reverser (FEC|TR)", "Record Type":"Template", Sequence:1, "Step Label":"STEP 1", "Checklist Item":"PO customer", Form:"", Folder:"A" },
-  { Title:"TRA-01", Product:"Thrust Reverser (A320neo)", "Record Type":"Template", Sequence:1, "Step Label":"STEP 1", "Checklist Item":"PO SNA", Form:"", Folder:"A" },
-  { Title:"TR-02", Product:"Thrust Reverser (FEC|TR)", "Record Type":"Template", Sequence:2, "Step Label":"STEP 2", "Checklist Item":"Incoming Inspection check list", Form:"BQG8009 Form2", Folder:"C" }
-];
-
 /* ---------- helpers ---------- */
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c]));
@@ -192,11 +163,10 @@ const Store = {
 };
 
 /* ---------- load data / open work order ---------- */
-async function loadAll(demo) {
-  S.err = ""; demoMode = !!demo; render(); note("Loading data…");
+async function loadAll() {
+  S.err = ""; render(); note("Loading data…");
   try {
-    if (demoMode) { S.status = lower(DEMO_STATUS); S.tpl = lower(DEMO_TPL); S.user = "Demo user"; seedDemo(); }
-    else {
+    {
       const c = S.cfg;
       if (!c.statusUrl || !c.tplUrl || !c.unitUrl || !c.folderUrl) throw new Error("Open Settings and fill in all four SharePoint links.");
       await signIn();
@@ -523,8 +493,7 @@ function render() {
   let h = "";
   if (sc === "start") {
     h = `<h2 class="big">Sign in to start</h2><p class="sub">Your work orders and checklist templates load from SharePoint.</p>${err}
-    <div class="stack"><button class="btn" onclick="loadAll(false)">Sign in with Microsoft</button>
-    <button class="btn alt" onclick="loadAll(true)">Try with demo data</button>
+    <div class="stack"><button class="btn" onclick="loadAll()">Sign in with Microsoft</button>
     <button class="link" onclick="go('settings')">Settings</button></div>`;
   } else if (sc === "wo") {
     h = `<h2 class="big">Select your work order</h2><p class="sub">Choose a WO to automatically retrieve the serial number and product details.</p>${err}
