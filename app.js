@@ -547,7 +547,6 @@ function render() {
   if (sc === "start") {
     h = `<h2 class="big">Sign in to start</h2><p class="sub">Your work orders and checklist templates load from SharePoint.</p>${err}
     <div class="stack"><button class="btn" onclick="loadAll(false)">Sign in with Microsoft</button>
-    <button class="btn alt" onclick="loadAll(true)">Try with demo data</button>
     <button class="link" onclick="go('settings')">Settings</button></div>`;
   } else if (sc === "wo") {
     h = `<h2 class="big">Select your work order</h2><p class="sub">Choose a WO to automatically retrieve the serial number and product details.</p>${err}
