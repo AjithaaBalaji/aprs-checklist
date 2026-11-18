@@ -98,7 +98,7 @@ const sid = id => String(id).replace(/['"\\]/g, "");
 const S = {
   screen: "start", user: "", status: [], tpl: [], wo: "", sn: "", product: "",
   showAll: false, from: "", dash: null, engine: "", items: [], unit: [], unitState: "idle", unitErr: "", unitFile: "", cands: [], choice: "", row: null, tplProduct: "", data: null, saved: "", err: "", modal: null, dirty: false,
-  cfg: Object.assign({ clientId:"", tenant:"common", statusUrl:"", tplUrl:"", folderUrl:"", statusSheet:"", tplSheet:"", unitUrl:"", unitSheet:"" },
+  cfg: Object.assign({ clientId:"", tenant:"common", statusUrl:"", tplUrl:"", folderUrl:"", statusSheet:"", tplSheet:"", unitUrl:"", unitSheet:"", relUrl:"", relSheet:"" },
         JSON.parse(localStorage.getItem("aprs_cfg") || "{}"))
 };
 let demoMode = false, msalApp = null, folderRef = null, saveTimer = null, toastTimer = null;
@@ -317,7 +317,13 @@ async function buildIndex() {
       url = j["@odata.nextLink"];
     }
   }
-  for (const u of links) { const ref = await refOf(u, "unit status folder"); await walk(ref.drive, ref.id, 0); }
+  const bad = [];
+  for (const [i, u] of links.entries()) {
+    try { const ref = await refOf(u, "unit status folder"); await walk(ref.drive, ref.id, 0); }
+    catch (e) { bad.push(`link ${i + 1}: ${e.message}`); }       // one bad link must not block the others
+  }
+  if (bad.length && !out.length) throw new Error(bad.join(" "));
+  out.bad = bad;
   return out;
 }
 function getIndex() { return unitIndexP ||= buildIndex().catch(e => { unitIndexP = null; throw e; }); }
@@ -357,7 +363,7 @@ async function startUnit() {
     else {
       const idx = await getIndex(), re = new RegExp("^" + wo.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "(?![0-9A-Za-z])", "i");
       const hits = idx.filter(f => re.test(f.name) && !f.name.startsWith("~$")).sort((a, b) => b.mod.localeCompare(a.mod));
-      if (!hits.length) throw new Error(`No unit status file found for ${wo}. The file name should start with the work order, for example "${wo} Unit Status.xlsx".`);
+      if (!hits.length) throw new Error(`No unit status file found for ${wo}. The file name should start with the work order, for example "${wo} Unit Status.xlsx".` + (idx.bad && idx.bad.length ? ` Some folder links could not be opened (${idx.bad.join("; ")}). Check Settings.` : ""));
       const f = hits[0], r = await gfetch(`${G}/drives/${f.drive}/items/${f.id}/content`);
       if (!r.ok) throw new Error("Could not open " + f.name + " (" + r.status + ").");
       const wb = XLSX.read(await r.arrayBuffer(), { type: "array" });
@@ -383,7 +389,7 @@ async function save() {
   clearTimeout(saveTimer);
   if (!S.data || !S.dirty) return;
   S.dirty = false; S.data.updated = new Date().toISOString(); S.data.inspector = S.user;
-  try { await Store.saveJson(S.wo, S.data); if (S.dash) S.dash.byKey[key(S.wo)] = JSON.parse(JSON.stringify(S.data)); setSaved("Last saved: " + fmt(S.data.updated) + (demoMode ? " (demo, not stored)" : "")); }
+  let xl = ""; try { await Store.saveJson(S.wo, S.data); try { await saveMaintExcel(); } catch (e) { xl = " (maintenance Excel not updated: " + e.message + ")"; } if (S.dash) S.dash.byKey[key(S.wo)] = JSON.parse(JSON.stringify(S.data)); setSaved("Last saved: " + fmt(S.data.updated) + (demoMode ? " (demo, not stored)" : "") + xl); }
   catch (e) { S.dirty = true; setSaved("Not saved: " + e.message); }
 }
 function setF(scope, id, f, v) { obj(scope, id)[f] = v; touch(); }
@@ -499,7 +505,7 @@ function unitHTML() {
       return `<td class="${ci >= 6 ? "st " + stClass(v) : ""}">${esc(v)}</td>`;
     }).join("") + `<td><button class="cb ${cl}" onclick="openMaint(${k})">${lab}</button></td></tr>`;
   }).join("");
-  return `${S.unitFile ? `<p class="prog">Source: ${esc(S.unitFile)}</p>` : ""}<div class="tw"><table><thead><tr>${th}</tr></thead><tbody>${tr}</tbody></table></div>`;
+  return `${S.unitFile ? `<p class="prog">Source: ${esc(S.unitFile)}</p>` : ""}<div class="tw"><table class="ut"><colgroup>${[6, 8, 7, 10, 21, 14, 9, 6, 8, 11].map(w => `<col style="width:${w}%">`).join("")}</colgroup><thead><tr>${th}</tr></thead><tbody>${tr}</tbody></table></div>`;
 }
 
 /* ---------- maintenance check popup ---------- */
@@ -526,7 +532,7 @@ async function back() {
   else if (S.screen === "settings") go(S.status.length ? "wo" : "start");
 }
 function saveCfg() {
-  ["clientId", "tenant", "statusUrl", "statusSheet", "tplUrl", "tplSheet", "unitUrl", "folderUrl"].forEach(k => S.cfg[k] = $("#cf_" + k).value.trim());
+  ["clientId", "tenant", "statusUrl", "statusSheet", "tplUrl", "tplSheet", "unitUrl", "folderUrl", "relUrl", "relSheet"].forEach(k => S.cfg[k] = $("#cf_" + k).value.trim());
   localStorage.setItem("aprs_cfg", JSON.stringify(S.cfg)); msalApp = null; folderRef = null; go("start");
 }
 
@@ -575,6 +581,7 @@ function render() {
     ${f("tplUrl", "SharePoint link: Checklist templates Excel file")}${f("tplSheet", "Templates sheet name (blank = first sheet)")}
     <label class="f" for="cf_unitUrl" style="margin-top:14px">SharePoint links: unit status folders (one per line: FSM, Nacelles, Radome)</label><textarea id="cf_unitUrl" rows="4">${esc(S.cfg.unitUrl)}</textarea>
     ${f("folderUrl", "SharePoint link: results folder (checklists and photos are saved here)")}
+    ${f("relUrl", "Release dates Excel on SharePoint (optional, needs a WO column and a Release column)")}${f("relSheet", "Release dates sheet name (blank = auto)")}
     <div class="cta" style="justify-content:flex-start"><button class="btn" onclick="saveCfg()">Save settings</button></div></div>`;
   }
   $("#app").innerHTML = h;

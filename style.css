@@ -152,3 +152,10 @@ td.todo{background:#c9def2}
 .stt{font-weight:700;color:var(--c);white-space:nowrap}
 .stt::before{content:"";display:inline-block;width:10px;height:10px;border-radius:50%;background:var(--c);margin-right:6px}
 @media(max-width:860px){.dgrid{grid-template-columns:1fr}}
+
+/* unit status table: fit the page on computers, slide on phones */
+table.ut{table-layout:fixed;min-width:0}
+.ut th{padding:10px 6px;font-size:11.5px;letter-spacing:0;white-space:normal}
+.ut td{padding:9px 6px;font-size:13px;overflow-wrap:anywhere}
+.ut .cb{padding:7px 8px;font-size:13px;white-space:normal;width:100%}
+@media(max-width:860px){table.ut{min-width:900px}}
